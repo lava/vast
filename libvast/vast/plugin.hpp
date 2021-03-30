@@ -163,6 +163,16 @@ public:
   make_command() const = 0;
 };
 
+/// A base class for plugins that add new transform steps.
+class transform_plugin : public virtual plugin {
+public:
+  virtual transform_step make_transform_step(const caf::settings&) const = 0;
+
+  // OR
+
+  // caf::expected<vast::table_slice> transform(vast::table_slice&&);
+};
+
 // -- plugin_ptr ---------------------------------------------------------------
 
 /// An owned plugin and dynamically loaded plugin.

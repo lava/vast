@@ -12,8 +12,11 @@
 
 #include "vast/aliases.hpp"
 #include "vast/data.hpp"
+#include "vast/path.hpp"
+#include "vast/qualified_record_field.hpp"
 #include "vast/system/actors.hpp"
 #include "vast/system/instrumentation.hpp"
+#include "vast/system/transformer.hpp"
 
 #include <caf/typed_event_based_actor.hpp>
 #include <caf/typed_response_promise.hpp>
@@ -84,11 +87,14 @@ struct importer_state {
                         caf::broadcast_downstream_manager<table_slice>>
     stage;
 
+  transformer_actor transformer;
+
   /// Pointer to the owning actor.
   importer_actor::pointer self;
 
   std::string inbound_description = "anonymous";
 
+  // FIXME: restore this functionality
   std::unordered_map<caf::inbound_path*, std::string> inbound_descriptions;
 
   measurement measurement_;
@@ -113,9 +119,9 @@ struct importer_state {
 /// @param batch_size The initial number of IDs to request when replenishing.
 /// @param type_registry A handle to the type-registry module.
 importer_actor::behavior_type
-importer(importer_actor::stateful_pointer<importer_state> self,
-         const std::filesystem::path& dir, node_actor::pointer node,
-         const archive_actor& archive, index_actor index,
-         const type_registry_actor& type_registry);
+importer(importer_actor::stateful_pointer<importer_state> self, const std::filesystem::path dir,
+         node_actor::pointer node, const archive_actor& archive,
+         index_actor index, const type_registry_actor& type_registry,
+         std::vector<transform>&& input_transformations = {});
 
 } // namespace vast::system

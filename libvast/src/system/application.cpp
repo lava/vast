@@ -281,6 +281,8 @@ auto make_spawn_source_command() {
       .add<std::string>("schema,S", "alternate schema as string")
       .add<std::string>("schema-file,s", "path to alternate schema")
       .add<std::string>("type,t", "filter event type based on prefix matching")
+      .add<std::vector<std::string>>("transforms", "transformation to apply to "
+                                                   "input")
       .add<bool>("uds,d", "treat -r as listening UNIX domain socket"));
   spawn_source->add_subcommand("csv",
                                "creates a new CSV source inside the node",

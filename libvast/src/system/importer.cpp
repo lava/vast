@@ -233,11 +233,14 @@ void importer_state::send_report() {
 }
 
 importer_actor::behavior_type
-importer(importer_actor::stateful_pointer<importer_state> self,
-         const std::filesystem::path& dir, node_actor::pointer node,
-         const archive_actor& archive, index_actor index,
-         const type_registry_actor& type_registry) {
+importer(importer_actor::stateful_pointer<importer_state> self, path dir,
+         node_actor::pointer node, const archive_actor& archive,
+         index_actor index, const type_registry_actor& type_registry,
+         std::vector<transform>&& input_transformations) {
   VAST_TRACE_SCOPE("{}", VAST_ARG(dir));
+  for (auto x : input_transformations) {
+    VAST_WARN("importer: {}", x.transform_name);
+  }
   self->state.dir = dir;
   auto err = self->state.read_state();
   if (err) {
@@ -251,18 +254,34 @@ importer(importer_actor::stateful_pointer<importer_state> self,
     self->quit(msg.reason);
   });
   self->state.stage = make_importer_stage(self);
+  self->state.transformer
+    = self->spawn(transformer, std::move(input_transformations));
+  if (!self->state.transformer) {
+    VAST_ERROR("{} failed to spawn transformer", self);
+    self->quit(std::move(err));
+    return importer_actor::behavior_type::make_empty_behavior();
+  }
+  self->state.stage->add_outbound_path(self->state.transformer);
   if (type_registry)
-    self->state.stage->add_outbound_path(type_registry);
+    self->send(self->state.transformer,
+               static_cast<stream_sink_actor<table_slice>>(type_registry));
   if (archive)
-    self->state.stage->add_outbound_path(archive);
+    self->send(self->state.transformer,
+               static_cast<stream_sink_actor<table_slice>>(archive));
   if (index) {
     self->state.index = std::move(index);
-    self->state.stage->add_outbound_path(self->state.index);
+    self->send(self->state.transformer,
+               static_cast<stream_sink_actor<table_slice>>(self->state.index));
   }
-  for (auto& plugin : plugins::get())
-    if (auto* p = plugin.as<analyzer_plugin>())
-      if (auto analyzer = p->analyzer(node))
-        self->state.stage->add_outbound_path(analyzer);
+  for (auto& plugin : plugins::get()) {
+    if (auto p = plugin.as<analyzer_plugin>()) {
+      if (auto analyzer = p->analyzer(node)) {
+        self->send(self->state.transformer,
+                   static_cast<stream_sink_actor<table_slice>>(analyzer));
+        self->state.analyzers.emplace_back(p->name(), std::move(analyzer));
+      }
+    }
+  }
   return {
     // Register the ACCOUNTANT actor.
     [self](accountant_actor accountant) {
@@ -273,7 +292,7 @@ importer(importer_actor::stateful_pointer<importer_state> self,
     // Add a new sink.
     [self](stream_sink_actor<table_slice> sink) {
       VAST_DEBUG("{} adds a new sink: {}", self, sink);
-      return self->state.stage->add_outbound_path(std::move(sink));
+      return self->delegate(self->state.transformer, sink, 0);
     },
     // Register a FLUSH LISTENER actor.
     [self](atom::subscribe, atom::flush, flush_listener_actor listener) {
@@ -290,6 +309,7 @@ importer(importer_actor::stateful_pointer<importer_state> self,
     // -- stream_sink_actor<table_slice> ---------------------------------------
     [self](caf::stream<table_slice> in) {
       VAST_DEBUG("{} adds a new source: {}", self, self->current_sender());
+      // return self->delegate(self->state.transformer, in);
       return self->state.stage->add_inbound_path(in);
     },
     // -- stream_sink_actor<table_slice, std::string> --------------------------
@@ -298,6 +318,7 @@ importer(importer_actor::stateful_pointer<importer_state> self,
       VAST_DEBUG("{} adds a new {} source: {}", self, desc,
                  self->current_sender());
       return self->state.stage->add_inbound_path(in);
+      // return self->delegate(self->state.transformer, in);
     },
     // -- status_client_actor --------------------------------------------------
     [self](atom::status, status_verbosity v) { //

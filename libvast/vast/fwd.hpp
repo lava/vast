@@ -159,6 +159,7 @@ using column_index_ptr = std::unique_ptr<column_index>;
 using ids = bitmap; // temporary; until we have a real type for 'ids'
 using synopsis_ptr = std::unique_ptr<synopsis>;
 using table_slice_builder_ptr = caf::intrusive_ptr<table_slice_builder>;
+using transform_step = std::function<caf::expected<table_slice>(table_slice&&)>;
 using value_index_ptr = std::unique_ptr<value_index>;
 
 /// A duration in time with nanosecond resolution.
