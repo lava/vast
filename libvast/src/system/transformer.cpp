@@ -61,9 +61,11 @@ transform_step erase_step(const std::string& fieldname) {
 transformer_stream_stage_ptr
 make_transform_stage(stream_sink_actor<table_slice>::pointer self,
                      std::vector<transform>&& transforms) {
-  VAST_WARN("attaching transform stage with transforms");
-  for (auto& t : transforms) {
-    VAST_WARN(t.transform_name);
+  std::unordered_map<std::string, std::vector<size_t>> transforms_mapping;
+  for (size_t i = 0; i < transforms.size(); ++i) {
+    for (const auto& et : transforms[i].event_types) {
+      transforms_mapping[et].push_back(i);
+    }
   }
   return caf::attach_continuous_stream_stage(
     self,
@@ -71,20 +73,19 @@ make_transform_stage(stream_sink_actor<table_slice>::pointer self,
       VAST_WARN("init stream");
       // nop
     },
-    [self, transforms = std::move(transforms)](
+    [self, transforms = std::move(transforms),
+     transforms_mapping = std::move(transforms_mapping)](
       caf::unit_t&, caf::downstream<table_slice>& out, table_slice x) {
       auto offset = x.offset();
       VAST_WARN("applying {} transforms for received table slice w/ layout {}",
                 transforms.size(), x.layout().name());
-      for (const auto& t : transforms) {
-        if (std::find(t.event_types.begin(), t.event_types.end(),
-                      x.layout().name())
-            == t.event_types.end()) {
-          VAST_WARN("continuing because no matching type found for event_types "
-                    "{}",
-                    t.event_types);
-          continue;
-        }
+      const auto& matching = transforms_mapping.find(x.layout().name());
+      if (matching == transforms_mapping.end()) {
+        out.push(std::move(x));
+        return;
+      }
+      for (auto idx : matching->second) {
+        const auto& t = transforms.at(idx);
         // FIXME: Make 'transform::apply()' function
         VAST_WARN("applying {} steps of transform {}", t.steps.size(),
                   t.transform_name);
