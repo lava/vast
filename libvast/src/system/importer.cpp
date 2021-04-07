@@ -238,9 +238,8 @@ importer(importer_actor::stateful_pointer<importer_state> self, path dir,
          index_actor index, const type_registry_actor& type_registry,
          std::vector<transform>&& input_transformations) {
   VAST_TRACE_SCOPE("{}", VAST_ARG(dir));
-  for (auto x : input_transformations) {
-    VAST_WARN("importer: {}", x.transform_name);
-  }
+  for (auto x : input_transformations)
+    VAST_WARN("Loaded import transformation {}", x.transform_name);
   self->state.dir = dir;
   auto err = self->state.read_state();
   if (err) {
@@ -261,6 +260,9 @@ importer(importer_actor::stateful_pointer<importer_state> self, path dir,
     self->quit(std::move(err));
     return importer_actor::behavior_type::make_empty_behavior();
   }
+  // TODO: Architecturally it would make more sense to put the transformer
+  // *before* the import actor, but I had some stream setup troubles when
+  // delegating the `caf::stream<table_slice>` message.
   self->state.stage->add_outbound_path(self->state.transformer);
   if (type_registry)
     self->send(self->state.transformer,

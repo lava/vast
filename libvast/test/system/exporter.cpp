@@ -72,7 +72,8 @@ struct fixture : fixture_base {
   }
 
   void spawn_exporter(query_options opts) {
-    exporter = self->spawn(system::exporter, expr, opts);
+    exporter = self->spawn(system::exporter, expr, opts,
+                           std::vector<vast::system::transform>{});
   }
 
   void importer_setup() {

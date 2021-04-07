@@ -161,51 +161,60 @@ make_pseudonymize_step(const std::string& fieldname, const std::string& salt) {
   return pseudonymize_step{fieldname, salt};
 }
 
+transformation_engine::transformation_engine(std::vector<transform>&& transforms)
+  : transforms_(transforms) {
+  for (size_t i = 0; i < transforms.size(); ++i)
+    for (const auto& type : transforms[i].event_types)
+      layout_mapping_[type].push_back(i);
+}
+
+/// Apply relevant transformations to the table slice.
+caf::expected<table_slice> transformation_engine::apply(table_slice&& x) const {
+  auto offset = x.offset();
+  VAST_INFO("applying {} transforms for received table slice w/ layout {}",
+            transforms_.size(), x.layout().name());
+  const auto& matching = layout_mapping_.find(x.layout().name());
+  if (matching == layout_mapping_.end())
+    return std::move(x);
+  for (auto idx : matching->second) {
+    const auto& t = transforms_.at(idx);
+    // FIXME: Make 'transform::apply()' function
+    VAST_INFO("applying {} steps of transform {}", t.steps.size(),
+              t.transform_name);
+    for (const auto& step : t.steps) {
+      VAST_WARN("step...");
+      auto transformed = step(std::move(x));
+      if (!transformed) {
+        return transformed;
+      }
+      x = std::move(*transformed);
+    }
+  }
+  x.offset(offset);
+  return std::move(x);
+}
+
 transformer_stream_stage_ptr
 make_transform_stage(stream_sink_actor<table_slice>::pointer self,
                      std::vector<transform>&& transforms) {
-  std::unordered_map<std::string, std::vector<size_t>> transforms_mapping;
-  for (size_t i = 0; i < transforms.size(); ++i)
-    for (const auto& type : transforms[i].event_types)
-      transforms_mapping[type].push_back(i);
+  transformation_engine transformer{std::move(transforms)};
+  // transformation_engine transformer(std::move(transforms));
   return caf::attach_continuous_stream_stage(
     self,
     [](caf::unit_t&) {
       // nop
     },
-    [self, transforms = std::move(transforms),
-     transforms_mapping = std::move(transforms_mapping)](
+    [transformer = std::move(transformer)](
       caf::unit_t&, caf::downstream<table_slice>& out, table_slice x) {
-      auto offset = x.offset();
-      VAST_INFO("applying {} transforms for received table slice w/ layout {}",
-                transforms.size(), x.layout().name());
-      const auto& matching = transforms_mapping.find(x.layout().name());
-      if (matching == transforms_mapping.end()) {
-        out.push(std::move(x));
+      auto transformed = transformer.apply(std::move(x));
+      if (!transformed) {
+        VAST_ERROR("discarding data: error in transformation step. {}",
+                   transformed.error());
         return;
       }
-      for (auto idx : matching->second) {
-        const auto& t = transforms.at(idx);
-        // FIXME: Make 'transform::apply()' function
-        VAST_INFO("applying {} steps of transform {}", t.steps.size(),
-                  t.transform_name);
-        for (const auto& step : t.steps) {
-          VAST_WARN("step...");
-          auto transformed = step(std::move(x));
-          if (!transformed) {
-            VAST_ERROR("discarding data: error in transformation step. {}",
-                       transformed.error());
-            return;
-          }
-          x = std::move(*transformed);
-        }
-      }
-      // TODO: Ideally we'd want to apply transform *before* the importer
-      // assigns ids.
-      x.offset(offset);
-      out.push(std::move(x));
+      out.push(std::move(*transformed));
     },
-    [self](caf::unit_t&, const caf::error&) {
+    [](caf::unit_t&, const caf::error&) {
       // nop
     });
 }

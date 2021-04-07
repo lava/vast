@@ -18,27 +18,8 @@
 
 namespace vast::system {
 
+// FIXME: would it make sense to use virtual inheritance for this?
 using transform_step = std::function<caf::expected<table_slice>(table_slice&&)>;
-
-// OR
-
-// struct transform_step {
-// 	virtual ~transform_step() = default;
-// 	virtual table_slice transform(table_slice&&);
-// };
-
-// struct erase_step : public transform_step {
-//   // FIXME: This probably needs a qualified fieldname?
-//   std::string fieldname;
-// };
-
-// struct add_step : public transform_step {
-//   // FIXME
-// };
-
-// struct modify_step : public transform_step {
-//   // FIXME
-// };
 
 // Built-in transform steps.
 
@@ -52,9 +33,6 @@ transform_step make_anonymize_step(const std::string& fieldname);
 //  TODO: Add an option to make the hash function configurable.
 transform_step make_pseudonymize_step(const std::string& fieldname,
                                       const std::string& salt = "");
-
-// transform_step add_community_id_step(const std::string& out, const
-// std::string& )
 
 // TODO: Do these make sense? Or should we just make a builtin hash_step?
 // transform_step add_step(const std::string& fieldname, );
@@ -77,13 +55,31 @@ using transformer_stream_stage_ptr
   = caf::stream_stage_ptr<table_slice,
                           caf::broadcast_downstream_manager<table_slice>>;
 
+// FIXME: Rename this.
+struct transformation_engine {
+  // member functions
+
+  /// Constructor.
+  transformation_engine() = default;
+  explicit transformation_engine(std::vector<transform>&&);
+
+  /// Apply relevant transformations to the table slice.
+  caf::expected<table_slice> apply(table_slice&&) const;
+
+private:
+  /// The set of transforms
+  std::vector<transform> transforms_;
+
+  /// event type -> applicable transforms
+  std::unordered_map<std::string, std::vector<size_t>> layout_mapping_;
+};
+
 struct transformer_state {
-  /// The transform that can might be applied
-  std::vector<transform> transforms;
+  /// The transforms that can be applied.
+  transformation_engine transforms;
 
+  /// The stream stage
   transformer_stream_stage_ptr stage;
-
-  // TODO: add LRU cache for layout -> subset of transforms
 
   /// Name of the TRANSFORMER actor.
   static constexpr const char* name = "transformer";
