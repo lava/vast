@@ -65,9 +65,10 @@ struct fixture : fixture_base {
   }
 
   void spawn_importer() {
-    importer = self->spawn(system::importer, directory / "importer",
-                           system::node_actor::pointer{}, archive, index,
-                           type_registry);
+    importer
+      = self->spawn(system::importer, directory / "importer",
+                    system::node_actor::pointer{}, archive, index,
+                    type_registry, std::vector<vast::system::transform>{});
   }
 
   void spawn_exporter(query_options opts) {

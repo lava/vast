@@ -8,6 +8,7 @@
 
 #include "vast/system/transformer.hpp"
 
+#include "vast/detail/overload.hpp"
 #include "vast/error.hpp"
 #include "vast/logger.hpp"
 #include "vast/plugin.hpp"
@@ -20,7 +21,7 @@
 
 namespace vast::system {
 
-transform_step erase_step(const std::string& fieldname) {
+transform_step delete_step(const std::string& fieldname) {
   return [fieldname](vast::table_slice&& slice) -> caf::expected<table_slice> {
     // TODO: Make a specialized version of this for `arrow`-encoding.
     const auto& layout = slice.layout();
@@ -29,13 +30,10 @@ transform_step erase_step(const std::string& fieldname) {
     // FIXME: handle multiple fields with the same name
     auto field = std::find_if(layout.fields.begin(), layout.fields.end(),
                               [&](const record_field& r) {
-                                VAST_INFO(r.name);
                                 return r.name == fieldname;
                               });
-    if (field == layout.fields.end()) {
-      VAST_WARN("did not fiend field {}", fieldname);
+    if (field == layout.fields.end())
       return std::move(slice);
-    }
     size_t erased_column = std::distance(layout.fields.begin(), field);
     auto modified_fields = layout.fields;
     modified_fields.erase(modified_fields.begin() + erased_column);
@@ -49,35 +47,137 @@ transform_step erase_step(const std::string& fieldname) {
         if (j == erased_column)
           continue;
         if (!builder_ptr->add(slice.at(i, j)))
-          return caf::make_error(ec::unspecified, "erase step: unknown error "
+          return caf::make_error(ec::unspecified, "delete step: unknown error "
                                                   "in table slice builder");
       }
     }
-    VAST_WARN("returning new slice");
     return builder_ptr->finish();
   };
+}
+
+struct anonymize_step {
+  anonymize_step(const std::string& fieldname) : field_(fieldname) {
+  }
+
+  static vast::data anonymize(const vast::data_view&) {
+    return "xxx";
+  }
+
+  // TODO: `anonymize` and `pseudonymize` use almost the same code.
+  // This could probably be combined into a generic `modify_step`.
+  caf::expected<table_slice> operator()(table_slice&& slice) {
+    const auto& fields = slice.layout().fields;
+    // FIXME: Use `find()` to handle nested fields etc.
+    // auto field = slice.layout().find(self->state.fieldname);
+    // FIXME: handle multiple fields with the same name
+    auto field
+      = std::find_if(fields.begin(), fields.end(), [&](const record_field& r) {
+          VAST_INFO(r.name);
+          return r.name == field_;
+        });
+    if (field == fields.end())
+      return std::move(slice);
+    size_t column_index = std::distance(fields.begin(), field);
+    vast::data anonymized_value;
+    auto type = fields.at(column_index).type;
+    auto builder_ptr
+      = factory<table_slice_builder>::make(slice.encoding(), slice.layout());
+    for (size_t i = 0; i < slice.rows(); ++i) {
+      for (size_t j = 0; j < slice.columns(); ++j) {
+        const auto& item = slice.at(i, j);
+        auto success = j == column_index ? builder_ptr->add(anonymize(item))
+                                         : builder_ptr->add(item);
+        if (!success)
+          return caf::make_error(ec::unspecified,
+                                 "anonymize step: unknown error "
+                                 "in table slice builder");
+      }
+    }
+    return builder_ptr->finish();
+  }
+
+private:
+  std::string field_;
+};
+
+struct pseudonymize_step {
+  pseudonymize_step(const std::string& fieldname, const std::string& salt)
+    : field_(fieldname), salt_(salt) {
+  }
+
+  vast::data pseudonymize(const vast::data_view& data) {
+    auto hasher = vast::uhash<xxhash64>{};
+    auto hash = hasher(data);
+    if (!salt_.empty())
+      hash = hasher(salt_);
+    return fmt::format("{:x}", hash);
+  }
+
+  caf::expected<table_slice> operator()(table_slice&& slice) {
+    const auto& fields = slice.layout().fields;
+    // FIXME: Use `find()` to handle nested fields etc.
+    // auto field = slice.layout().find(self->state.fieldname);
+    // FIXME: handle multiple fields with the same name
+    auto field
+      = std::find_if(fields.begin(), fields.end(),
+                     [&](const record_field& r) { return r.name == field_; });
+    if (field == fields.end())
+      return std::move(slice);
+    size_t column_index = std::distance(fields.begin(), field);
+    auto layout = slice.layout();
+    layout.fields.at(column_index).type = string_type{};
+    auto builder_ptr
+      = factory<table_slice_builder>::make(slice.encoding(), layout);
+    for (size_t i = 0; i < slice.rows(); ++i) {
+      for (size_t j = 0; j < slice.columns(); ++j) {
+        const auto& item = slice.at(i, j);
+        auto success = j == column_index ? builder_ptr->add(pseudonymize(item))
+                                         : builder_ptr->add(item);
+        if (!success)
+          return caf::make_error(ec::unspecified,
+                                 "pseudonymize step: unknown error "
+                                 "in table slice builder");
+      }
+    }
+    return builder_ptr->finish();
+  }
+
+private:
+  std::string field_;
+  std::string salt_;
+};
+
+transform_step make_delete_step(const std::string& fieldname) {
+  return delete_step(fieldname);
+}
+
+transform_step make_anonymize_step(const std::string& fieldname) {
+  return anonymize_step{fieldname};
+}
+
+/// Replace a field in the input by its hash value.
+transform_step
+make_pseudonymize_step(const std::string& fieldname, const std::string& salt) {
+  return pseudonymize_step{fieldname, salt};
 }
 
 transformer_stream_stage_ptr
 make_transform_stage(stream_sink_actor<table_slice>::pointer self,
                      std::vector<transform>&& transforms) {
   std::unordered_map<std::string, std::vector<size_t>> transforms_mapping;
-  for (size_t i = 0; i < transforms.size(); ++i) {
-    for (const auto& et : transforms[i].event_types) {
-      transforms_mapping[et].push_back(i);
-    }
-  }
+  for (size_t i = 0; i < transforms.size(); ++i)
+    for (const auto& type : transforms[i].event_types)
+      transforms_mapping[type].push_back(i);
   return caf::attach_continuous_stream_stage(
     self,
     [](caf::unit_t&) {
-      VAST_WARN("init stream");
       // nop
     },
     [self, transforms = std::move(transforms),
      transforms_mapping = std::move(transforms_mapping)](
       caf::unit_t&, caf::downstream<table_slice>& out, table_slice x) {
       auto offset = x.offset();
-      VAST_WARN("applying {} transforms for received table slice w/ layout {}",
+      VAST_INFO("applying {} transforms for received table slice w/ layout {}",
                 transforms.size(), x.layout().name());
       const auto& matching = transforms_mapping.find(x.layout().name());
       if (matching == transforms_mapping.end()) {
@@ -87,12 +187,14 @@ make_transform_stage(stream_sink_actor<table_slice>::pointer self,
       for (auto idx : matching->second) {
         const auto& t = transforms.at(idx);
         // FIXME: Make 'transform::apply()' function
-        VAST_WARN("applying {} steps of transform {}", t.steps.size(),
+        VAST_INFO("applying {} steps of transform {}", t.steps.size(),
                   t.transform_name);
         for (const auto& step : t.steps) {
+          VAST_WARN("step...");
           auto transformed = step(std::move(x));
           if (!transformed) {
-            VAST_ERROR("discarding data: error in transformation step");
+            VAST_ERROR("discarding data: error in transformation step. {}",
+                       transformed.error());
             return;
           }
           x = std::move(*transformed);
@@ -101,7 +203,6 @@ make_transform_stage(stream_sink_actor<table_slice>::pointer self,
       // TODO: Ideally we'd want to apply transform *before* the importer
       // assigns ids.
       x.offset(offset);
-      VAST_WARN("pushing slice w/ offset {} size {}", x.offset(), x.rows());
       out.push(std::move(x));
     },
     [self](caf::unit_t&, const caf::error&) {

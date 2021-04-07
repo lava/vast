@@ -41,7 +41,21 @@ using transform_step = std::function<caf::expected<table_slice>(table_slice&&)>;
 // };
 
 // Built-in transform steps.
-transform_step erase_step(const std::string& fieldname);
+
+/// Removes a field from a table slice
+transform_step make_delete_step(const std::string& fieldname);
+
+/// Replaces a field in the input by "xxx".
+transform_step make_anonymize_step(const std::string& fieldname);
+
+/// Replace a field in the input by its hash value.
+//  TODO: Add an option to make the hash function configurable.
+transform_step make_pseudonymize_step(const std::string& fieldname,
+                                      const std::string& salt = "");
+
+// transform_step add_community_id_step(const std::string& out, const
+// std::string& )
+
 // TODO: Do these make sense? Or should we just make a builtin hash_step?
 // transform_step add_step(const std::string& fieldname, );
 // transform_step modify_step(const std::string& fieldname);

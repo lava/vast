@@ -163,14 +163,22 @@ public:
   make_command() const = 0;
 };
 
+// -- transform plugin ---------------------------------------------------------
+
 /// A base class for plugins that add new transform steps.
 class transform_plugin : public virtual plugin {
 public:
-  virtual transform_step make_transform_step(const caf::settings&) const = 0;
+  // maybe good idea?
+  // enum class modification { add, delete_, modify };
 
+  [[nodiscard]] virtual transform_step
+  make_transform_step(const caf::settings&) const = 0;
   // OR
-
   // caf::expected<vast::table_slice> transform(vast::table_slice&&);
+
+  // This might be useful to construct the final layout ahead of time?
+  // [[nodiscard]]
+  // virtual record_type layout_change(const record_type&) const = 0;
 };
 
 // -- plugin_ptr ---------------------------------------------------------------

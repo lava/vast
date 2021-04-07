@@ -43,13 +43,27 @@ caf::error parse_transform_steps(std::vector<transform_step>& result,
     auto opts = caf::get_if<caf::config_value::dictionary>(&value);
     if (function == "delete") {
       auto fieldname = caf::get_if<std::string>(opts, "field");
-      result.push_back(erase_step(fieldname.value()));
-    } else if (function == "add") {
-      // FIXME
-    } else if (function == "modify") {
-      // FIXME
+      if (!fieldname)
+        return caf::make_error(ec::invalid_configuration, "missing 'field' key "
+                                                          "in delete step");
+      result.push_back(make_delete_step(fieldname.value()));
+    } else if (function == "anonymize") {
+      auto fieldname = caf::get_if<std::string>(opts, "field");
+      if (!fieldname)
+        return caf::make_error(ec::invalid_configuration, "missing 'field' key "
+                                                          "in anonymize step");
+      result.push_back(make_anonymize_step(fieldname.value()));
+    } else if (function == "pseudonymize") {
+      auto fieldname = caf::get_if<std::string>(opts, "field");
+      if (!fieldname)
+        return caf::make_error(ec::invalid_configuration, "missing 'field' key "
+                                                          "in anonymize step");
+      // TODO: Maybe expose 'hash' option so people can choose between
+      result.push_back(make_pseudonymize_step(fieldname.value()));
     } else {
       bool is_plugin = false;
+      // FIXME: Register all transform plugins in a transform_step_factory
+      // during vast startup.
       for (const auto& plugin : plugins::get()) {
         if (function != plugin->name())
           continue;
@@ -60,8 +74,8 @@ caf::error parse_transform_steps(std::vector<transform_step>& result,
         result.push_back(t->make_transform_step(*opts));
       }
       if (!is_plugin)
-        return caf::make_error(ec::invalid_configuration, "unknown step '{}'",
-                               function);
+        return caf::make_error(ec::invalid_configuration,
+                               fmt::format("unknown step '{}'", function));
     }
   }
   return caf::none;
@@ -154,7 +168,8 @@ parse_transforms(transforms_location loc, const caf::settings& opts) {
   }
   for (auto [name, event_types] : transform_triggers) {
     if (!transforms.count(name)) {
-      return caf::make_error(ec::invalid_configuration, "unknown transform");
+      return caf::make_error(ec::invalid_configuration,
+                             fmt::format("unknown transform '{}'", name));
     }
     auto& transform = result.emplace_back();
     transform.transform_name = name;
