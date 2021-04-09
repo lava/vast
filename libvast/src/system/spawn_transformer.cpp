@@ -47,19 +47,23 @@ caf::error parse_transform_steps(std::vector<transform_step>& result,
         return caf::make_error(ec::invalid_configuration, "missing 'field' key "
                                                           "in delete step");
       result.push_back(make_delete_step(fieldname.value()));
+    } else if (function == "replace") {
+      auto fieldname = caf::get_if<std::string>(opts, "field");
+      if (!fieldname)
+        return caf::make_error(ec::invalid_configuration, "missing 'field' key "
+                                                          "in replace step");
+      auto value = caf::get_if<std::string>(opts, "value");
+      if (!value)
+        return caf::make_error(ec::invalid_configuration, "missing 'value' key "
+                                                          "in replace step");
+      result.push_back(make_replace_step(fieldname.value(), value.value()));
     } else if (function == "anonymize") {
       auto fieldname = caf::get_if<std::string>(opts, "field");
       if (!fieldname)
         return caf::make_error(ec::invalid_configuration, "missing 'field' key "
                                                           "in anonymize step");
-      result.push_back(make_anonymize_step(fieldname.value()));
-    } else if (function == "pseudonymize") {
-      auto fieldname = caf::get_if<std::string>(opts, "field");
-      if (!fieldname)
-        return caf::make_error(ec::invalid_configuration, "missing 'field' key "
-                                                          "in anonymize step");
       // TODO: Maybe expose 'hash' option so people can choose between
-      result.push_back(make_pseudonymize_step(fieldname.value()));
+      result.push_back(make_anonymize_step(fieldname.value()));
     } else {
       bool is_plugin = false;
       // FIXME: Register all transform plugins in a transform_step_factory

@@ -51,7 +51,7 @@ public:
                                    "community_id: unknown error "
                                    "in table slice builder");
         }
-        if (!builder_ptr->add("community!"))
+        if (!builder_ptr->add("(todo)"))
           return caf::make_error(ec::unspecified,
                                  "commnity_id: unknown error "
                                  "in table slice builder while adding string");

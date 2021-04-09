@@ -56,11 +56,12 @@ transform_step delete_step(const std::string& fieldname) {
 }
 
 struct anonymize_step {
-  anonymize_step(const std::string& fieldname) : field_(fieldname) {
+  anonymize_step(const std::string& fieldname, const std::string& value)
+    : field_(fieldname), value_(value) {
   }
 
-  static vast::data anonymize(const vast::data_view&) {
-    return "xxx";
+  vast::data anonymize(const vast::data_view&) {
+    return value_;
   }
 
   // TODO: `anonymize` and `pseudonymize` use almost the same code.
@@ -71,10 +72,8 @@ struct anonymize_step {
     // auto field = slice.layout().find(self->state.fieldname);
     // FIXME: handle multiple fields with the same name
     auto field
-      = std::find_if(fields.begin(), fields.end(), [&](const record_field& r) {
-          VAST_INFO(r.name);
-          return r.name == field_;
-        });
+      = std::find_if(fields.begin(), fields.end(),
+                     [&](const record_field& r) { return r.name == field_; });
     if (field == fields.end())
       return std::move(slice);
     size_t column_index = std::distance(fields.begin(), field);
@@ -98,6 +97,7 @@ struct anonymize_step {
 
 private:
   std::string field_;
+  std::string value_;
 };
 
 struct pseudonymize_step {
@@ -151,13 +151,14 @@ transform_step make_delete_step(const std::string& fieldname) {
   return delete_step(fieldname);
 }
 
-transform_step make_anonymize_step(const std::string& fieldname) {
-  return anonymize_step{fieldname};
+transform_step
+make_replace_step(const std::string& fieldname, const std::string& value) {
+  return anonymize_step{fieldname, value};
 }
 
 /// Replace a field in the input by its hash value.
 transform_step
-make_pseudonymize_step(const std::string& fieldname, const std::string& salt) {
+make_anonymize_step(const std::string& fieldname, const std::string& salt) {
   return pseudonymize_step{fieldname, salt};
 }
 
@@ -171,18 +172,17 @@ transformation_engine::transformation_engine(std::vector<transform>&& transforms
 /// Apply relevant transformations to the table slice.
 caf::expected<table_slice> transformation_engine::apply(table_slice&& x) const {
   auto offset = x.offset();
-  VAST_INFO("applying {} transforms for received table slice w/ layout {}",
-            transforms_.size(), x.layout().name());
   const auto& matching = layout_mapping_.find(x.layout().name());
   if (matching == layout_mapping_.end())
     return std::move(x);
+  VAST_INFO("applying {} transforms for received table slice w/ layout {}",
+            matching->second.size(), x.layout().name());
   for (auto idx : matching->second) {
     const auto& t = transforms_.at(idx);
     // FIXME: Make 'transform::apply()' function
     VAST_INFO("applying {} steps of transform {}", t.steps.size(),
               t.transform_name);
     for (const auto& step : t.steps) {
-      VAST_WARN("step...");
       auto transformed = step(std::move(x));
       if (!transformed) {
         return transformed;
