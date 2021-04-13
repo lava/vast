@@ -212,6 +212,7 @@ make_transform_stage(stream_sink_actor<table_slice>::pointer self,
                    transformed.error());
         return;
       }
+      VAST_WARN("pushing table slice");
       out.push(std::move(*transformed));
     },
     [](caf::unit_t&, const caf::error&) {
@@ -236,6 +237,23 @@ transformer(transformer_actor::stateful_pointer<transformer_state> self,
           [self](caf::stream<table_slice> in)
             -> caf::inbound_stream_slot<table_slice> {
             VAST_WARN("{} got a new stream source", self);
+            return self->state.stage->add_inbound_path(in);
+          }};
+}
+
+pre_transformer_actor::behavior_type
+pre_transformer(pre_transformer_actor::stateful_pointer<transformer_state> self,
+                std::vector<transform>&& transforms,
+                const stream_sink_actor<table_slice>& out) {
+  VAST_WARN("creating pre-transformer");
+  self->state.stage = make_transform_stage(
+    caf::actor_cast<stream_sink_actor<table_slice>::pointer>(self),
+    std::move(transforms));
+  self->state.stage->add_outbound_path(out);
+  return {[](int) { /* dummy */ },
+          [self](caf::stream<table_slice> in)
+            -> caf::inbound_stream_slot<table_slice> {
+            VAST_WARN("pre-transformer got a new stream source from {} msg {}", self->current_sender(), typeid(self->current_mailbox_element()->content()).name());
             return self->state.stage->add_inbound_path(in);
           }};
 }

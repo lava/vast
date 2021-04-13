@@ -89,6 +89,8 @@ struct importer_state {
 
   transformer_actor transformer;
 
+  pre_transformer_actor pre_transformer;
+
   /// Pointer to the owning actor.
   importer_actor::pointer self;
 

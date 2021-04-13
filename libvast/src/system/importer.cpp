@@ -255,7 +255,9 @@ importer(importer_actor::stateful_pointer<importer_state> self, path dir,
   self->state.stage = make_importer_stage(self);
   self->state.transformer
     = self->spawn(transformer, std::move(input_transformations));
-  if (!self->state.transformer) {
+  // auto ssa = ;
+  self->state.pre_transformer = self->spawn(pre_transformer, std::vector<transform>{}, static_cast<stream_sink_actor<table_slice>>(self));
+  if (!self->state.transformer || !self->state.pre_transformer) {
     VAST_ERROR("{} failed to spawn transformer", self);
     self->quit(std::move(err));
     return importer_actor::behavior_type::make_empty_behavior();
@@ -310,17 +312,17 @@ importer(importer_actor::stateful_pointer<importer_state> self, path dir,
     },
     // -- stream_sink_actor<table_slice> ---------------------------------------
     [self](caf::stream<table_slice> in) {
-      VAST_DEBUG("{} adds a new source: {}", self, self->current_sender());
-      // return self->delegate(self->state.transformer, in);
-      return self->state.stage->add_inbound_path(in);
+      VAST_WARN("{} adds a new source: {}", self, self->current_sender());
+      return self->delegate(self->state.pre_transformer, in);
+      // return self->state.stage->add_inbound_path(in);
     },
     // -- stream_sink_actor<table_slice, std::string> --------------------------
     [self](caf::stream<table_slice> in, std::string desc) {
       self->state.inbound_description = std::move(desc);
-      VAST_DEBUG("{} adds a new {} source: {}", self, desc,
+      VAST_WARN("{} adds a new {} source: {}", self, desc,
                  self->current_sender());
-      return self->state.stage->add_inbound_path(in);
-      // return self->delegate(self->state.transformer, in);
+      // return self->state.stage->add_inbound_path(in);
+      return self->delegate(self->state.pre_transformer, in);
     },
     // -- status_client_actor --------------------------------------------------
     [self](atom::status, status_verbosity v) { //

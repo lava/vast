@@ -54,12 +54,15 @@ public:
   /// Retrieves the list of candidate partition IDs for a given expression.
   /// @param expr The expression to lookup.
   /// @returns A vector of UUIDs representing candidate partitions.
+  [[nodiscard]]
   std::vector<uuid> lookup(const expression& expr) const;
 
+  [[nodiscard]]
   std::vector<uuid> lookup_impl(const expression& expr) const;
 
   /// @returns A best-effort estimate of the amount of memory used for this meta
   /// index (in bytes).
+  [[nodiscard]]
   size_t memusage() const;
 
   // -- data members -----------------------------------------------------------

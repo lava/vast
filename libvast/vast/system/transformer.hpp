@@ -21,6 +21,9 @@ namespace vast::system {
 // FIXME: would it make sense to use virtual inheritance for this?
 using transform_step = std::function<caf::expected<table_slice>(table_slice&&)>;
 
+// TODO: 
+
+
 // Built-in transform steps.
 
 /// Removes a field from a table slice
@@ -86,14 +89,24 @@ struct transformer_state {
   static constexpr const char* name = "transformer";
 };
 
-transformer_stream_stage_ptr
-make_transform_stage(typename stream_sink_actor<table_slice>::pointer,
-                     std::vector<transform>&&);
+// transformer_stream_stage_ptr
+// make_transform_stage(typename stream_sink_actor<table_slice>::pointer,
+//                      std::vector<transform>&&);
 
 /// An actor containing a transform_stream_stage.
 /// @param self The actor handle.
 transformer_actor::behavior_type
 transformer(transformer_actor::stateful_pointer<transformer_state> self,
             std::vector<transform>&&);
+
+// Same as above, but to be inserted as a stream stage *before* the spawning actor.
+using pre_transformer_actor
+  = typed_actor_fwd<caf::reacts_to<int>>::
+    extend_with<stream_sink_actor<table_slice>>::unwrap;
+
+pre_transformer_actor::behavior_type
+pre_transformer(pre_transformer_actor::stateful_pointer<transformer_state> self,
+            std::vector<transform>&&,
+            const stream_sink_actor<table_slice>& out);
 
 } // namespace vast::system
