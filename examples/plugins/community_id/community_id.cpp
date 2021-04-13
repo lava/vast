@@ -20,8 +20,37 @@
 #include <caf/typed_event_based_actor.hpp>
 
 #include <iostream>
+#include "caf/expected.hpp"
 
 namespace vast::plugins {
+
+caf::expected<table_slice> add_community_id(table_slice&& slice) {
+  auto layout = slice.layout();
+  // TODO: Get fieldname from config.
+  layout.fields.emplace_back("community_id", vast::string_type{});
+  auto builder_ptr
+    = factory<table_slice_builder>::make(slice.encoding(), layout);
+  for (size_t i = 0; i < slice.rows(); ++i) {
+    for (size_t j = 0; j < slice.columns(); ++j) {
+      if (!builder_ptr->add(slice.at(i, j)))
+        return caf::make_error(ec::unspecified,
+                               "community_id: unknown error "
+                               "in table slice builder");
+    }
+    if (!builder_ptr->add("(todo)"))
+      return caf::make_error(ec::unspecified,
+                             "commnity_id: unknown error "
+                             "in table slice builder while adding string");
+  }
+  return builder_ptr->finish();    
+}
+
+#if VAST_ENABLE_ARROW
+
+
+
+#endif
+
 
 /// An example plugin.
 class community_id_plugin final : public virtual transform_plugin {
@@ -36,32 +65,14 @@ public:
   };
 
   // transform plugin API
-  [[nodiscard]] transform_step
+  [[nodiscard]] system::transform_step_t
   make_transform_step(const caf::settings&) const override {
-    return [](table_slice&& slice) -> caf::expected<table_slice> {
-      auto layout = slice.layout();
-      // TODO: Get fieldname from config.
-      layout.fields.emplace_back("community_id", vast::string_type{});
-      auto builder_ptr
-        = factory<table_slice_builder>::make(slice.encoding(), layout);
-      for (size_t i = 0; i < slice.rows(); ++i) {
-        for (size_t j = 0; j < slice.columns(); ++j) {
-          if (!builder_ptr->add(slice.at(i, j)))
-            return caf::make_error(ec::unspecified,
-                                   "community_id: unknown error "
-                                   "in table slice builder");
-        }
-        if (!builder_ptr->add("(todo)"))
-          return caf::make_error(ec::unspecified,
-                                 "commnity_id: unknown error "
-                                 "in table slice builder while adding string");
-      }
-      return builder_ptr->finish();
-    };
+    system::transform_step_t result;
+    result.generic_handler = add_community_id;
+    return result;
   }
 };
 
 } // namespace vast::plugins
 
-// Register the example_plugin with version 0.1.0-0.
 VAST_REGISTER_PLUGIN(vast::plugins::community_id_plugin, 0, 1, 0, 0)

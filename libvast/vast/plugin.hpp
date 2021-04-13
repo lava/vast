@@ -13,6 +13,7 @@
 #include "vast/command.hpp"
 #include "vast/config.hpp"
 #include "vast/system/actors.hpp"
+#include "vast/system/transformer.hpp"
 
 #include <caf/actor_system_config.hpp>
 #include <caf/error.hpp>
@@ -168,26 +169,9 @@ public:
 /// A base class for plugins that add new transform steps.
 class transform_plugin : public virtual plugin {
 public:
-  // maybe good idea?
-  // enum class modification { add, delete_, modify };
 
-  // TODO: move to transformer.hpp
-  struct transform_step_t {
-    virtual caf::expected<table_slice> apply(table_slice&&) = 0;
-  };
-
-#if VAST_ENABLE_ARROW
-
-  struct arrow_transform_step : public transform_step_t {
-    virtual std::shared_ptr<arrow::RecordBatch> apply(std::shared_ptr<arrow::RecordBatch>) = 0;
-  };
-
-#endif
-
-  [[nodiscard]] virtual transform_step
+  [[nodiscard]] virtual system::transform_step_t
   make_transform_step(const caf::settings&) const = 0;
-  // OR
-  // caf::expected<vast::table_slice> transform(vast::table_slice&&);
 
   // This might be useful to construct the final layout ahead of time?
   // [[nodiscard]]

@@ -255,16 +255,11 @@ importer(importer_actor::stateful_pointer<importer_state> self, path dir,
   self->state.stage = make_importer_stage(self);
   self->state.transformer
     = self->spawn(transformer, std::move(input_transformations));
-  // auto ssa = ;
-  self->state.pre_transformer = self->spawn(pre_transformer, std::vector<transform>{}, static_cast<stream_sink_actor<table_slice>>(self));
   if (!self->state.transformer || !self->state.pre_transformer) {
     VAST_ERROR("{} failed to spawn transformer", self);
     self->quit(std::move(err));
     return importer_actor::behavior_type::make_empty_behavior();
   }
-  // TODO: Architecturally it would make more sense to put the transformer
-  // *before* the import actor, but I had some stream setup troubles when
-  // delegating the `caf::stream<table_slice>` message.
   self->state.stage->add_outbound_path(self->state.transformer);
   if (type_registry)
     self->send(self->state.transformer,
@@ -312,17 +307,24 @@ importer(importer_actor::stateful_pointer<importer_state> self, path dir,
     },
     // -- stream_sink_actor<table_slice> ---------------------------------------
     [self](caf::stream<table_slice> in) {
-      VAST_WARN("{} adds a new source: {}", self, self->current_sender());
-      return self->delegate(self->state.pre_transformer, in);
-      // return self->state.stage->add_inbound_path(in);
+      // NOTE: Architecturally it would make more sense to put the transformer stage
+      // *before* the import actor, but that is not possible:
+      // The message sent is originally sent from the other side is a `caf::open_stream_msg`.
+      // This contains a field `msg` with a `caf::stream<>`. The caf streaming system recognizes
+      // this message and only passes the `caf::stream<>` to the handler. This means we can not
+      // delegate() this message, since we would only create a new message containing a `caf::stream`
+      // object but lose the surrounding `open_stream_msg` which contains the important parts.
+      // Sadly, the current actor is already stored as the "other side" of the stream in
+      // the outbound path, so we can't even hack around this with `caf::unsafe_send_as()`
+      // or similar black magic.
+      VAST_DEBUG("{} adds a new source", self);
+      return self->state.stage->add_inbound_path(in);
     },
     // -- stream_sink_actor<table_slice, std::string> --------------------------
     [self](caf::stream<table_slice> in, std::string desc) {
       self->state.inbound_description = std::move(desc);
-      VAST_WARN("{} adds a new {} source: {}", self, desc,
-                 self->current_sender());
-      // return self->state.stage->add_inbound_path(in);
-      return self->delegate(self->state.pre_transformer, in);
+      VAST_DEBUG("{} adds a new {} source", self, desc);
+      return self->state.stage->add_inbound_path(in);
     },
     // -- status_client_actor --------------------------------------------------
     [self](atom::status, status_verbosity v) { //

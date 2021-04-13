@@ -75,7 +75,8 @@ caf::error parse_transform_steps(std::vector<transform_step>& result,
         if (!t)
           continue;
         is_plugin = true;
-        result.push_back(t->make_transform_step(*opts));
+        // FIXME
+        // result.push_back(t->make_transform_step(*opts));
       }
       if (!is_plugin)
         return caf::make_error(ec::invalid_configuration,

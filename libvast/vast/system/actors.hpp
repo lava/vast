@@ -372,7 +372,9 @@ using transformer_actor
   = typed_actor_fwd<caf::reacts_to<stream_sink_actor<table_slice>>,
                     // The `int` is a dummy argument to disambiguate the call.
                     caf::replies_to<stream_sink_actor<table_slice>, int>::with< //
-                      caf::outbound_stream_slot<table_slice>>>::
+                      caf::outbound_stream_slot<table_slice>>,
+                    // Named stream. (TODO: Switch to varargs)
+                    caf::reacts_to<stream_sink_actor<table_slice, std::string>, std::string>>::
     extend_with<stream_sink_actor<table_slice>>::unwrap;
 
 /// The interface of the NODE actor.

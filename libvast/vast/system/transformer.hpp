@@ -12,17 +12,53 @@
 
 #include "vast/system/actors.hpp"
 #include "vast/system/sink.hpp"
+#include "vast/table_slice.hpp"
 
 #include <caf/stream_stage.hpp>
 #include <caf/typed_event_based_actor.hpp>
+#include <memory>
 
 namespace vast::system {
 
-// FIXME: would it make sense to use virtual inheritance for this?
 using transform_step = std::function<caf::expected<table_slice>(table_slice&&)>;
 
-// TODO: 
+// TODO: Move to `vast/transform.hpp`.
+struct transform_step_t {
+  // typedefs
+  using apply_fn = std::function<caf::expected<table_slice>(table_slice&&)>;
 
+#if VAST_ENABLE_ARROW
+  using arrow_apply_fn = std::function<std::shared_ptr<arrow::RecordBatch>(std::shared_ptr<arrow::RecordBatch>)>;
+#endif
+
+  // TODO: Add a specialized 
+
+  // data members
+
+  /// Handler mapping table_slice -> table_slice
+  apply_fn generic_handler;
+
+#if VAST_ENABLE_ARROW
+  /// Optional: Optimized 
+  std::optional<arrow_apply_fn> arrow_handler;
+#endif
+};
+
+// This would be an alternative design based on virtual inheritance, but it
+// has the disadvantage that transforms would always need to be passed around
+// by pointer.
+
+// struct transform_step_t {
+//   virtual caf::expected<table_slice> operator()(table_slice&&) = 0;
+// };
+
+// #if VAST_ENABLE_ARROW
+
+// struct arrow_transform_step : public transform_step_t {
+//   virtual std::shared_ptr<arrow::RecordBatch> operator()(std::shared_ptr<arrow::RecordBatch>) = 0;
+// };
+
+// #endif
 
 // Built-in transform steps.
 
@@ -38,10 +74,7 @@ make_replace_step(const std::string& fieldname, const std::string& value);
 transform_step
 make_anonymize_step(const std::string& fieldname, const std::string& salt = "");
 
-// TODO: Do these make sense? Or should we just make a builtin hash_step?
-// transform_step add_step(const std::string& fieldname, );
-// transform_step modify_step(const std::string& fieldname);
-
+// TODO: Move to `vast/transform.hpp`.
 struct transform {
   /// Sequence of transformation steps
   std::vector<transform_step> steps;
@@ -59,7 +92,7 @@ using transformer_stream_stage_ptr
   = caf::stream_stage_ptr<table_slice,
                           caf::broadcast_downstream_manager<table_slice>>;
 
-// FIXME: Rename this.
+// FIXME: Rename this. and move to `vast/transform.hpp`.
 struct transformation_engine {
   // member functions
 

@@ -195,6 +195,7 @@ source(caf::stateful_actor<source_state>* self, format::reader_ptr reader,
     },
     // done?
     [self](const caf::unit_t&) { return self->state.done; });
+  self->state.mgr->add_outbound_path(self->state.transformer);
   return {
     [self](atom::get, atom::schema) { return self->state.reader->schema(); },
     [self](atom::put, schema sch) -> caf::result<void> {
@@ -222,13 +223,11 @@ source(caf::stateful_actor<source_state>* self, format::reader_ptr reader,
                                    self->current_sender()));
         return;
       }
-      self->state.sink = std::move(sink);
       self->delayed_send(self, defaults::system::telemetry_rate,
                          atom::telemetry_v);
       // Start streaming.
       auto name = std::string{self->state.reader->name()};
-      self->state.mgr->add_outbound_path(self->state.sink,
-                                         std::make_tuple(std::move(name)));
+      self->delegate(self->state.transformer, sink, name);
     },
     [self](atom::status, status_verbosity v) {
       caf::settings result;

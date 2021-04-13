@@ -230,6 +230,9 @@ transformer(transformer_actor::stateful_pointer<transformer_state> self,
             VAST_WARN("transformer adding stream sink {}", out);
             self->state.stage->add_outbound_path(out);
           },
+          [self](const stream_sink_actor<table_slice, std::string>& sink, std::string name) {
+            return self->state.stage->add_outbound_path(sink, std::make_tuple(std::move(name)));
+          },
           [self](const stream_sink_actor<table_slice>& out,
                  int) -> caf::outbound_stream_slot<table_slice> {
             return self->state.stage->add_outbound_path(out);
@@ -254,6 +257,8 @@ pre_transformer(pre_transformer_actor::stateful_pointer<transformer_state> self,
           [self](caf::stream<table_slice> in)
             -> caf::inbound_stream_slot<table_slice> {
             VAST_WARN("pre-transformer got a new stream source from {} msg {}", self->current_sender(), typeid(self->current_mailbox_element()->content()).name());
+      VAST_WARN("matches: {}", self->current_mailbox_element()->content().match_elements<caf::open_stream_msg>());
+            
             return self->state.stage->add_inbound_path(in);
           }};
 }
